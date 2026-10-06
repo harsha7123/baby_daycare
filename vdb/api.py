@@ -174,6 +174,9 @@ def create_app(settings: Settings, bus: Bus, users: list[User]) -> FastAPI:
         if request.url.path.startswith("/api/"):
             # Footage and reports of children must not linger in browser or proxy caches.
             response.headers["Cache-Control"] = "no-store"
+        elif request.url.path == "/" or request.url.path.startswith("/static/"):
+            # Revalidate the dashboard on every load so updates appear immediately (ETags keep it cheap).
+            response.headers["Cache-Control"] = "no-cache"
         return response
 
     def client_ip(request: Request) -> str:

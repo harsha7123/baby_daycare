@@ -154,7 +154,7 @@ function roomCard(r, points) {
     el("div", { class: "spark" },
       el("div", { class: "spark-legend" },
         el("span", {}, el("i", { style: "background:var(--blue)" }), "Children"),
-        el("span", {}, el("i", { style: "background:var(--green)" }), "Adults"),
+        el("span", {}, el("i", { style: "background:var(--gray)" }), "Adults"),
         el("span", { class: "when", text: has ? (age < 90 ? "Live" : `As of ${timeOf(r.ts, tz())}`) : "Today" })),
       sparkline(points)));
 }

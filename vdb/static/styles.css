@@ -1,4 +1,5 @@
-/* Vision Day Baby — staff dashboard. Apple-style design tokens; light + dark. */
+/* Vision Day Baby — staff dashboard. Premium white by default: neutral greys, near-black ink, one charcoal
+   accent. Colour is used only where it carries meaning (severity, ratio status). Dark theme is optional. */
 
 :root {
   color-scheme: light dark;
@@ -6,36 +7,37 @@
   --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --font-rounded: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
-  /* Light set */
-  --bg: #f2f2f7;
+  /* Light set (default): white surfaces, warm-neutral greys, near-black ink */
+  --bg: #fafafa;
   --bg-card: #ffffff;
   --bg-elevated: #ffffff;
-  --bg-sidebar: rgba(242, 242, 247, 0.92);
-  --bg-bar: rgba(249, 249, 251, 0.72);
-  --bg-media: #e5e5ea;
-  --fill: rgba(120, 120, 128, 0.12);
-  --fill-strong: rgba(120, 120, 128, 0.2);
-  --label: #000000;
-  --label-2: rgba(60, 60, 67, 0.72);
-  --label-3: rgba(60, 60, 67, 0.45);
-  --separator: rgba(60, 60, 67, 0.2);
-  --separator-opaque: #c6c6c8;
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.04);
-  --shadow-float: 0 10px 40px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.06);
-  --skeleton: rgba(120, 120, 128, 0.12);
-  --skeleton-hi: rgba(120, 120, 128, 0.04);
+  --bg-sidebar: #ffffff;
+  --bg-bar: rgba(255, 255, 255, 0.86);
+  --bg-media: #ececee;
+  --fill: rgba(0, 0, 0, 0.045);
+  --fill-strong: rgba(0, 0, 0, 0.08);
+  --label: #1d1d1f;
+  --label-2: #6e6e73;
+  --label-3: #a1a1a6;
+  --separator: rgba(0, 0, 0, 0.08);
+  --separator-opaque: #e5e5e7;
+  --shadow-card: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.03);
+  --shadow-float: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 18px 48px rgba(0, 0, 0, 0.10);
+  --skeleton: rgba(0, 0, 0, 0.05);
+  --skeleton-hi: rgba(0, 0, 0, 0.02);
 
-  --blue: #007aff;   --blue-text: #0059c7;   --blue-bg: rgba(0, 122, 255, 0.12);
-  --green: #34c759;  --green-text: #1f7a37;  --green-bg: rgba(52, 199, 89, 0.14);
-  --orange: #ff9500; --orange-text: #b04a00; --orange-bg: rgba(255, 149, 0, 0.15);
-  --red: #ff3b30;    --red-text: #c4001a;    --red-bg: rgba(255, 59, 48, 0.12);
-  --purple: #af52de; --purple-text: #8135a8; --purple-bg: rgba(175, 82, 222, 0.13);
-  --indigo: #5856d6; --indigo-text: #3634a3; --indigo-bg: rgba(88, 86, 214, 0.13);
-  --pink: #ff2d55;   --pink-text: #c20f3c;   --pink-bg: rgba(255, 45, 85, 0.12);
-  --teal: #30b0c7;   --teal-text: #0e6f82;   --teal-bg: rgba(48, 176, 199, 0.14);
-  --gray: #8e8e93;   --gray-text: #545458;   --gray-bg: rgba(142, 142, 147, 0.16);
+  /* The "accent" family is charcoal ink; decorative hues collapse to neutral greys. */
+  --blue: #1d1d1f;   --blue-text: #1d1d1f;   --blue-bg: rgba(0, 0, 0, 0.06);
+  --green: #2e7d4f;  --green-text: #22633d;  --green-bg: rgba(46, 125, 79, 0.09);
+  --orange: #b26a00; --orange-text: #8a5200; --orange-bg: rgba(178, 106, 0, 0.09);
+  --red: #c4302b;    --red-text: #a3221d;    --red-bg: rgba(196, 48, 43, 0.08);
+  --purple: #1d1d1f; --purple-text: #1d1d1f; --purple-bg: rgba(0, 0, 0, 0.06);
+  --indigo: #1d1d1f; --indigo-text: #1d1d1f; --indigo-bg: rgba(0, 0, 0, 0.06);
+  --pink: #1d1d1f;   --pink-text: #1d1d1f;   --pink-bg: rgba(0, 0, 0, 0.06);
+  --teal: #1d1d1f;   --teal-text: #1d1d1f;   --teal-bg: rgba(0, 0, 0, 0.06);
+  --gray: #86868b;   --gray-text: #515154;   --gray-bg: rgba(0, 0, 0, 0.05);
   --accent: var(--blue);
-  --focus: rgba(0, 122, 255, 0.55);
+  --focus: rgba(29, 29, 31, 0.35);
 
   --r-card: 16px;
   --r-sheet: 20px;
@@ -306,9 +308,7 @@ textarea.field { resize: vertical; min-height: 88px; font-size: 15px; line-heigh
 /* ---------- Sign in ---------- */
 .signin {
   min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: 32px 16px;
-  background:
-    radial-gradient(1200px 600px at 50% -10%, var(--blue-bg), transparent 70%),
-    var(--bg);
+  background: var(--bg);
 }
 .signin-card {
   width: 100%; max-width: 400px; padding: 40px 32px 32px; text-align: center;
@@ -317,8 +317,8 @@ textarea.field { resize: vertical; min-height: 88px; font-size: 15px; line-heigh
 }
 .app-icon {
   width: 72px; height: 72px; margin: 0 auto 20px; border-radius: 18px; display: grid; place-items: center;
-  background: linear-gradient(160deg, #5ac8fa 0%, #007aff 55%, #5856d6 100%);
-  color: #fff; box-shadow: 0 8px 24px rgba(0, 122, 255, 0.3);
+  background: #1d1d1f;
+  color: #fff;
 }
 .app-icon svg { width: 40px; height: 40px; }
 .signin h1 { margin-bottom: 8px; }
@@ -361,13 +361,13 @@ textarea.field { resize: vertical; min-height: 88px; font-size: 15px; line-heigh
 .nav a .glyph { width: 28px; height: 28px; border-radius: 7px; }
 .nav a .glyph svg { width: 17px; height: 17px; }
 .nav a .badge-count { margin-left: auto; }
-.nav a[aria-current="page"] { background: var(--blue); color: #fff; }
-.nav a[aria-current="page"] .badge-count { background: #fff; color: var(--blue); }
+.nav a[aria-current="page"] { background: var(--fill-strong); color: var(--label); font-weight: 600; }
+.nav a[aria-current="page"] .badge-count { background: var(--label); color: var(--bg-card); }
 .sidebar-foot { margin-top: auto; display: grid; gap: 4px; padding-top: 16px; }
 .user-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; }
 .avatar {
   flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center;
-  background: linear-gradient(160deg, #a2a2a7, #6e6e73); color: #fff; font: 600 13px/1 var(--font);
+  background: #e8e8ed; color: #1d1d1f; font: 600 13px/1 var(--font);
 }
 .user-row .name { font: 600 15px/20px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -484,7 +484,7 @@ button.tile:active { transform: scale(0.98); }
 .spark svg { width: 100%; height: 44px; overflow: visible; }
 .spark .l-children { stroke: var(--blue); }
 .spark .a-children { fill: var(--blue-bg); }
-.spark .l-adults { stroke: var(--green); }
+.spark .l-adults { stroke: var(--gray); stroke-dasharray: 3 3; }
 .spark .noadult { fill: var(--red-bg); }
 
 /* ---------- Live ---------- */
@@ -541,7 +541,7 @@ button.tile:active { transform: scale(0.98); }
 .thumb img { width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 250ms; }
 .thumb img.ready { opacity: 1; }
 .unread-dot { position: absolute; left: 6px; top: 22px; width: 8px; height: 8px; border-radius: 50%; background: var(--blue); }
-.alert-row.sensitive .row { background: linear-gradient(90deg, var(--purple-bg), transparent 45%); }
+.alert-row.sensitive .row { box-shadow: inset 3px 0 0 var(--red); }
 .alert-row.enter { animation: enter 600ms var(--ease) both; }
 .alert-row.enter .row { animation: flash 2.4s ease-out both; }
 @keyframes enter { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: none; } }
@@ -750,3 +750,16 @@ table.data .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monosp
   .sidebar, .topbar, .tabbar, .toasts { display: none !important; }
   .shell { display: block; }
 }
+
+
+/* ---------- Premium white refinements ---------- */
+:root:not([data-theme="dark"]) .sidebar { border-right: 1px solid var(--separator); }
+:root:not([data-theme="dark"]) .topbar { border-bottom: 1px solid var(--separator); }
+/* Navigation and tile icons are monochrome; only alert severity is coloured. */
+:root:not([data-theme="dark"]) .nav .glyph,
+:root:not([data-theme="dark"]) .tile .tile-head svg { --tint: var(--label-2); --tint-text: var(--label-2); --tint-bg: transparent; }
+:root:not([data-theme="dark"]) .tile .tile-head { color: var(--label-2); font-weight: 500; }
+:root:not([data-theme="dark"]) .card, :root:not([data-theme="dark"]) .tile { box-shadow: var(--shadow-card); }
+/* Icon tiles are neutral in the white theme: the severity dot carries urgency, not the icon. */
+:root:not([data-theme="dark"]) .glyph { background: #f2f2f4; color: #1d1d1f; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.04); }
+:root:not([data-theme="dark"]) .nav a[aria-current="page"] .glyph { background: #ffffff; }

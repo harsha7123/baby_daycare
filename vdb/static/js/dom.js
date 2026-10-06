@@ -96,11 +96,11 @@ export function glyph(name, tint, cls = "") {
 export const TYPES = {
   no_adult: { label: "No adult present", icon: "userOff", tint: "red" },
   ratio_breach: { label: "Ratio breach", icon: "users", tint: "orange" },
-  phone_use: { label: "Phone use", icon: "phone", tint: "indigo" },
-  restricted_zone: { label: "Restricted area", icon: "noEntry", tint: "pink" },
+  phone_use: { label: "Phone use", icon: "phone", tint: "gray" },
+  restricted_zone: { label: "Restricted area", icon: "noEntry", tint: "red" },
   camera_offline: { label: "Camera offline", icon: "videoOff", tint: "gray" },
-  possible_aggression: { label: "Possible aggression", icon: "hand", tint: "purple" },
-  child_fall: { label: "Child fall", icon: "fall", tint: "teal" },
+  possible_aggression: { label: "Possible aggression", icon: "hand", tint: "red" },
+  child_fall: { label: "Child fall", icon: "fall", tint: "orange" },
 };
 export const typeInfo = (t) => TYPES[t] || { label: String(t || "Alert").replace(/_/g, " "), icon: "info", tint: "gray" };
 

@@ -20,11 +20,11 @@ const ROUTES = {
 const KEY = "vdb-key", SITE = "vdb-site", THEME = "vdb-theme";
 const app = document.getElementById("app");
 
-// ---------- Theme: follows the system, with a manual override ----------
+// ---------- Theme: premium white by default, with an optional dark / automatic override ----------
 const THEMES = ["system", "light", "dark"];
 const THEME_LABEL = { system: "Automatic", light: "Light", dark: "Dark" };
 const THEME_ICON = { system: "auto", light: "sun", dark: "moon" };
-let theme = THEMES.includes(prefs.get(THEME)) ? prefs.get(THEME) : "system";
+let theme = THEMES.includes(prefs.get(THEME)) ? prefs.get(THEME) : "light";
 function applyTheme() {
   if (theme === "system") document.documentElement.removeAttribute("data-theme");
   else document.documentElement.dataset.theme = theme;
