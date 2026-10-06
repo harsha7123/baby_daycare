@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from zoneinfo import ZoneInfo
 
 import yaml
@@ -13,8 +13,12 @@ class Zone(BaseModel):
     polygon: list[tuple[float, float]] = Field(min_length=3)
 
 
+# Ids end up in message-bus subjects and file paths, so keep them to safe characters.
+SafeId = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")]
+
+
 class Camera(BaseModel):
-    id: str
+    id: SafeId
     room: str
     # Video file path, stream URL, or "env:VAR_NAME" so camera credentials stay out of config files.
     source: str
@@ -34,11 +38,13 @@ class Camera(BaseModel):
 
 
 class Room(BaseModel):
-    id: str
+    id: SafeId
     name: str
     max_children_per_adult: int = 4
     # True when cameras see the same space (count = max per camera); False when they cover separate areas (sum).
     cameras_overlap: bool = True
+    # EXPERIMENTAL child_fall alerts. Leave off where crawling/lying down is normal (infant and nap rooms).
+    fall_detection: bool = False
 
 
 class Rules(BaseModel):
@@ -53,10 +59,23 @@ class Rules(BaseModel):
     stats_interval_seconds: float = 10
     # Room head-counts use the median over this window so one missed or phantom detection doesn't flip a rule.
     count_window_seconds: float = 10
+    # EXPERIMENTAL possible-aggression flags (pose heuristics; always need human review). Off until `vdb eval`
+    # on real labelled footage meets the target. Speeds are in body-heights per second.
+    aggression_enabled: bool = False
+    strike_speed: float = 1.5  # adult hand moving towards and into a child this fast (and the child reacts)
+    push_speed: float = 2.0  # a hand this fast into a child just before they fall counts as a possible push
+    push_detection: bool = True
+    rough_handling_speed: float = 1.5  # child moving this fast relative to the adult holding them (back and forth)
+    contact_margin: float = 0.15  # how far outside the child's box (fraction of its size) still counts as touching
+    aggression_cooldown_seconds: float = 30
+    fall_down_seconds: float = 10  # a fallen child who stays down this long raises child_fall
 
 
 class Models(BaseModel):
     detector: Literal["nano", "small", "medium", "large"] = "small"
+    # "tensorrt" compiles the detector for the exact GPU on first start (cached in engine_dir): 2-4x faster.
+    backend: Literal["torch", "tensorrt"] = "torch"
+    engine_dir: Path = Path("data/models")
     device: str = "auto"
     person_threshold: float = 0.4
     # Low-confidence people still help ByteTrack keep existing tracks alive through occlusion.
@@ -68,12 +87,28 @@ class Models(BaseModel):
     role_min_samples: int = 2
     # A new person counts as "maybe an adult" for at most this long while being classified.
     role_grace_seconds: float = 6.0
+    # Pose (RF-DETR keypoints) feeds the aggression checks. "interaction" runs it only on frames where an adult
+    # is close to a child, which keeps GPU cost low; "always" also draws skeletons on every live-view frame.
+    pose_mode: Literal["interaction", "always", "off"] = "interaction"
+    pose_threshold: float = 0.4
+    interaction_distance: float = 1.0  # gap between adult and child boxes, in adult body-heights
+    pose_linger_seconds: float = 1.5  # keep running pose this long after an adult was near a child
 
 
 class Clips(BaseModel):
     dir: Path = Path("data/clips")
     pre_seconds: float = 30  # max lead-in; clips start shortly before the condition began
     post_seconds: float = 5
+
+
+class Verifier(BaseModel):
+    """Video-language model that gives a second opinion on possible-aggression alerts (needs a big GPU)."""
+
+    enabled: bool = False
+    model: str = "Qwen/Qwen3-VL-8B-Instruct"  # Apache-2.0; Qwen/Qwen3-VL-2B-Instruct for small GPUs
+    revision: str | None = None  # pin a Hugging Face commit sha in production so the model can't change underneath
+    max_frames: int = 6
+    frame_width: int = 448
 
 
 class Retention(BaseModel):
@@ -91,7 +126,7 @@ class User(BaseModel):
 
 
 class Site(BaseModel):
-    id: str
+    id: SafeId
     name: str
     timezone: str = "UTC"
     rooms: list[Room]
@@ -118,7 +153,10 @@ class Settings(BaseModel):
     rules: Rules = Rules()
     models: Models = Models()
     clips: Clips = Clips()
+    verifier: Verifier = Verifier()
     retention: Retention = Retention()
+    preview_fps: float = 1.0  # annotated live-view frames per camera per second (0 = off)
+    demo: bool = False  # `vdb demo` refuses to run unless the config is explicitly a demo config
     bus_url: str | None = None  # nats://host:4222; None = in-process bus
     database_url: str = "sqlite+aiosqlite:///data/vdb.db"
 

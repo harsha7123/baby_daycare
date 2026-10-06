@@ -46,7 +46,15 @@ def test_replayed_camera_offline_ignored_unless_labelled():
 def test_too_few_events_fails_even_when_perfect():
     _, passed = format_report(score([alert(30), alert(110)], EVENTS, tolerance=5), target=0.9, min_events=20)
     assert not passed
+    # Enough events but the 95% lower bound of 2/2 is far below 90%.
     _, passed = format_report(score([alert(30), alert(110)], EVENTS, tolerance=5), target=0.9, min_events=2)
+    assert not passed
+
+
+def test_passes_when_lower_bound_clears_target():
+    events = [Event(room_id="r1", type=AlertType.NO_ADULT, start=100 * i, end=100 * i + 30) for i in range(40)]
+    alerts = [alert(100 * i + 20) for i in range(40)]
+    _, passed = format_report(score(alerts, events, tolerance=5), target=0.9, min_events=20)
     assert passed
 
 

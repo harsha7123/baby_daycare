@@ -17,6 +17,11 @@ class AlertType(StrEnum):
     PHONE_USE = "phone_use"
     RESTRICTED_ZONE = "restricted_zone"
     CAMERA_OFFLINE = "camera_offline"
+    POSSIBLE_AGGRESSION = "possible_aggression"
+    CHILD_FALL = "child_fall"
+
+
+Verification = Literal["pending", "likely", "unlikely", "unclear"]
 
 
 class Person(BaseModel):
@@ -26,6 +31,8 @@ class Person(BaseModel):
     confidence: float
     has_phone: bool = False
     zones: list[str] = []
+    # COCO-17 keypoints, normalised (x, y, confidence); only present when pose ran on this frame.
+    keypoints: list[tuple[float, float, float]] | None = None
 
 
 class FrameResult(BaseModel):
@@ -34,6 +41,7 @@ class FrameResult(BaseModel):
     camera_id: str
     ts: float
     people: list[Person]
+    frame_aspect: float = 16 / 9  # width / height, so motion can be measured in equal units both ways
 
 
 class Alert(BaseModel):
@@ -49,6 +57,18 @@ class Alert(BaseModel):
     track_id: int | None = None
     thumbnail: str | None = None
     clip: str | None = None
+    # Second opinion from the video-language model (aggression alerts only); a human always decides.
+    verification: Verification | None = None
+    verification_note: str | None = None
+    # Normalised box around the people involved (behaviour alerts), so reviewers and the verifier can zoom in.
+    region: tuple[float, float, float, float] | None = None
+
+
+class AlertUpdate(BaseModel):
+    site_id: str
+    alert_id: str
+    verification: Verification
+    verification_note: str | None = None
 
 
 class RoomStat(BaseModel):

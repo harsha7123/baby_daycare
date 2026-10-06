@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import logging
+import os
 import secrets
 import sys
 import threading
@@ -18,11 +19,20 @@ def api_users(settings: Settings, allow_temporary: bool) -> list[User]:
         return settings.users
     if not allow_temporary:
         sys.exit("no users configured: add some with `vdb new-user` before starting the API")
-    from vdb.api import hash_key
+    from vdb.api import MIN_KEY_LENGTH, hash_key
 
-    key = secrets.token_urlsafe(32)
-    print(f"\nNo users configured; temporary admin key for this run:\n  {key}\n")
+    key = os.environ.get("VDB_LOCAL_KEY", "")
+    if len(key) < MIN_KEY_LENGTH:
+        key = secrets.token_urlsafe(32)
+        print(f"\nNo users configured; temporary admin key for this run:\n  {key}\n")
     return [User(name="local-admin", key_sha256=hash_key(key))]
+
+
+def threadsafe_preview_publisher(bus, loop: asyncio.AbstractEventLoop):
+    def publish_preview(site_id: str, camera_id: str, jpg: bytes) -> None:
+        asyncio.run_coroutine_threadsafe(bus.publish_ephemeral(f"preview.{site_id}.{camera_id}", jpg), loop)
+
+    return publish_preview
 
 
 def threadsafe_publisher(bus, loop: asyncio.AbstractEventLoop):
@@ -42,7 +52,11 @@ async def serve_api(settings: Settings, bus, users: list[User], host: str, port:
 
     from vdb.api import create_app
 
-    server = uvicorn.Server(uvicorn.Config(create_app(settings, bus, users), host=host, port=port, log_level="info"))
+    # Behind the TLS proxy, the client address comes from X-Forwarded-For — trusted only from the proxy itself,
+    # so rate limiting and the access log see real staff IPs (VDB_TRUSTED_PROXIES, default localhost only).
+    trusted = os.environ.get("VDB_TRUSTED_PROXIES", "127.0.0.1")
+    server = uvicorn.Server(uvicorn.Config(create_app(settings, bus, users), host=host, port=port, log_level="info",
+                                           proxy_headers=True, forwarded_allow_ips=trusted))
     task = asyncio.create_task(server.serve())
     while not server.started and not task.done():
         await asyncio.sleep(0.1)
@@ -57,13 +71,15 @@ async def cmd_local(settings: Settings, args) -> None:
     from vdb.worker import build_worker
 
     bus = await make_bus(settings.bus_url)
-    publish = threadsafe_publisher(bus, asyncio.get_running_loop())
+    loop = asyncio.get_running_loop()
+    publish = threadsafe_publisher(bus, loop)
+    publish_preview = threadsafe_preview_publisher(bus, loop)
     stop = threading.Event()
 
     def start_worker() -> None:
         def run() -> None:
             try:
-                build_worker(settings, settings.sites, publish).run_live(stop)
+                build_worker(settings, settings.sites, publish, publish_preview=publish_preview).run_live(stop)
             except Exception:
                 log.exception("worker stopped: monitoring is DOWN")
 
@@ -86,7 +102,9 @@ async def cmd_worker(settings: Settings, args) -> None:
     sites = [s for s in settings.sites if not args.sites or s.id in args.sites.split(",")]
     bus = await NatsBus.connect(settings.bus_url)
     stop = threading.Event()
-    worker = build_worker(settings, sites, threadsafe_publisher(bus, asyncio.get_running_loop()))
+    loop = asyncio.get_running_loop()
+    worker = build_worker(settings, sites, threadsafe_publisher(bus, loop),
+                          publish_preview=threadsafe_preview_publisher(bus, loop))
     try:
         await asyncio.to_thread(worker.run_live, stop)
     finally:
@@ -105,6 +123,35 @@ async def cmd_api(settings: Settings, args) -> None:
         await serve_api(settings, bus, users, args.host, args.port)
     finally:
         await bus.close()
+
+
+async def cmd_demo(settings: Settings, args) -> None:
+    """API + dashboard fed by synthetic data: no cameras or GPU needed."""
+    from vdb.bus import MemoryBus
+    from vdb.demo import DemoGenerator
+
+    if not settings.demo:
+        sys.exit("refusing to run the demo generator: it writes fake incidents. Use a config with `demo: true` "
+                 "and its own database (e.g. configs/demo.yaml).")
+    bus = MemoryBus()
+
+    async def publish(subject: str, msg) -> None:
+        await bus.publish(subject, msg.model_dump_json().encode())
+
+    async def publish_preview(site_id: str, camera_id: str, jpg: bytes) -> None:
+        await bus.publish_ephemeral(f"preview.{site_id}.{camera_id}", jpg)
+
+    tasks = []
+
+    def start_demo() -> None:
+        tasks.append(asyncio.create_task(DemoGenerator(settings, publish, publish_preview).run()))
+
+    try:
+        await serve_api(settings, bus, api_users(settings, allow_temporary=True), args.host, args.port,
+                        after_start=start_demo)
+    finally:
+        for t in tasks:
+            t.cancel()
 
 
 async def cmd_report(settings: Settings, args) -> None:
@@ -137,7 +184,7 @@ def main() -> None:
     p.add_argument("--config", default="configs/local.yaml")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    for name in ("local", "api"):
+    for name in ("local", "api", "demo"):
         sp = sub.add_parser(name)
         sp.add_argument("--host", default="127.0.0.1")
         sp.add_argument("--port", type=int, default=8000)
@@ -167,7 +214,7 @@ def main() -> None:
         from vdb.evaluate import run_eval
 
         sys.exit(0 if run_eval(settings, args.labels, args.target, args.tolerance, args.min_events) else 1)
-    commands = {"local": cmd_local, "worker": cmd_worker, "api": cmd_api, "report": cmd_report}
+    commands = {"local": cmd_local, "worker": cmd_worker, "api": cmd_api, "report": cmd_report, "demo": cmd_demo}
     asyncio.run(commands[args.cmd](settings, args))
 
 

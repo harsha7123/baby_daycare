@@ -3,6 +3,7 @@ from collections.abc import Hashable
 from dataclasses import dataclass
 from statistics import median_low
 
+from vdb.behavior import BehaviorAnalyzer
 from vdb.config import Rules, Site
 from vdb.schemas import Alert, AlertType, FrameResult, Role, RoomStat
 
@@ -85,6 +86,10 @@ class RulesEngine:
         self.phone = Sustained(rules.phone_seconds, gap)
         self.zone = Sustained(rules.restricted_zone_seconds, gap)
 
+        self.behavior = BehaviorAnalyzer(site, rules)
+        # An aggression alert waits for a second opinion only when a verifier is configured.
+        self.verification_pending = False
+
         self.latest: dict[str, FrameResult] = {}
         self.last_seen: dict[str, float] = {}
         self.offline: set[str] = set()
@@ -117,6 +122,18 @@ class RulesEngine:
                                              AlertType.RESTRICTED_ZONE, "high", start, now,
                                              f"Child in restricted area '{zone}'", p.track_id)
 
+        for ev in self.behavior.update(fr):
+            aggression = ev.type == AlertType.POSSIBLE_AGGRESSION
+            severity = "high" if aggression else "medium"
+            cooldown = self.rules.aggression_cooldown_seconds if aggression else self.rules.cooldown_seconds
+            emitted = self._emit(None, None, (ev.type, ev.key), fr, fr.camera_id, ev.type, severity,
+                                 ev.started_at, now, ev.message, ev.track_id, cooldown)
+            for alert in emitted:
+                alert.region = ev.region
+                if aggression and self.verification_pending:
+                    alert.verification = "pending"
+            alerts += emitted
+
         room = self.rooms[fr.room_id]
         counts = self._room_counts(room.id, now)
         if counts.online:
@@ -143,7 +160,10 @@ class RulesEngine:
         return alerts, stats
 
     def tick(self, now: float) -> list[Alert]:
-        """Periodic check for cameras that stopped sending frames."""
+        """Periodic check for cameras that stopped sending frames (also prunes expired cooldowns)."""
+        longest = max(self.rules.cooldown_seconds, self.rules.aggression_cooldown_seconds)
+        for key in [k for k, t in self._last_alert.items() if now - t > longest]:
+            del self._last_alert[key]
         alerts = []
         for cam_id, room in self.cam_room.items():
             last = self.last_seen.setdefault(cam_id, now)
@@ -189,13 +209,15 @@ class RulesEngine:
         return best.camera_id
 
     def _emit(
-        self, cond: Sustained, cond_key: Hashable, cooldown_key: Hashable, fr: FrameResult, camera_id: str,
+        self, cond: Sustained | None, cond_key: Hashable, cooldown_key: Hashable, fr: FrameResult, camera_id: str,
         type_: AlertType, severity: str, start: float, now: float, message: str, track_id: int | None = None,
+        cooldown: float | None = None,
     ) -> list[Alert]:
-        if now - self._last_alert.get(cooldown_key, -1e18) < self.rules.cooldown_seconds:
+        if now - self._last_alert.get(cooldown_key, -1e18) < (self.rules.cooldown_seconds if cooldown is None else cooldown):
             return []
         self._last_alert[cooldown_key] = now
-        cond.fire(cond_key)
+        if cond is not None:
+            cond.fire(cond_key)
         return [Alert(
             site_id=fr.site_id, room_id=fr.room_id, camera_id=camera_id, type=type_, severity=severity,
             started_at=start, triggered_at=now, message=message, track_id=track_id,

@@ -1,6 +1,5 @@
-# Copy to configs/cloud.yaml on the EC2 host. bus_url and database_url come from env (see deploy/docker-compose.yml).
-# Staff keys: run `vdb new-user --name NAME --sites SITE` and paste its output here.
-# (Local runs without users print a temporary admin key.)
+# Copy to configs/cloud.yaml (gitignored; deploy/ec2/deploy.* uploads it). bus_url and database_url come from env.
+# Add at least one staff key: `vdb new-user --name NAME --sites demo`, paste its output under `users:`.
 users: []
 
 sites:
@@ -11,16 +10,31 @@ sites:
       - id: toddlers
         name: Toddler Room
         max_children_per_adult: 4
+        fall_detection: true     # EXPERIMENTAL; keep off in infant / nap rooms
     cameras:
+      # Until real CCTV is connected, the worker loops a sample clip baked into the image.
+      # Real camera later: source: env:CAM_DEMO_1_URL  (URL with credentials kept in deploy/.env)
       - id: cam-1
         room: toddlers
-        source: data/videos/sample.mp4   # later: env:CAM_DEMO_1_URL (URL with credentials kept in .env)
+        source: /app/samples/people-walking.mp4
         fps: 5
+
+rules:
+  # EXPERIMENTAL pose-based possible-aggression flags: always human-reviewed. Validate with `vdb eval`
+  # on labelled footage before relying on them.
+  aggression_enabled: true
 
 models:
   detector: small
+  backend: tensorrt        # compiled for the instance's GPU on first start, cached in /app/data/models
+  engine_dir: /app/data/models
   device: cuda
   batch_size: 16
+  pose_mode: interaction
+
+verifier:
+  enabled: true            # Qwen3-VL second opinion on possible-aggression alerts
+  model: Qwen/Qwen3-VL-8B-Instruct
 
 clips:
   dir: /app/data/clips

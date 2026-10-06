@@ -13,4 +13,5 @@ models/
 configs/*.yaml
 !configs/*.example.yaml
 !configs/smoke.yaml
+!configs/demo.yaml
 *.egg-info/

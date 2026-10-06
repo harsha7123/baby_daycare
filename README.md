@@ -1,117 +1,129 @@
 # Vision Day Baby
 
-Real-time safety monitoring for daycare centres from CCTV video.
+Real-time safety monitoring for daycare centres from CCTV video, with an Apple-style staff dashboard.
 
-## Alerts (v1)
+## Alerts
 
-| Alert | Trigger (defaults, all configurable) |
-|---|---|
-| `no_adult` | Children visible, no adult in the room for 20 s |
-| `ratio_breach` | More children per adult than the room allows, for 60 s |
-| `phone_use` | A caretaker holding a phone for 10 s |
-| `restricted_zone` | A child inside a marked zone (kitchen, door…) for 3 s |
-| `camera_offline` | No video from a camera for 30 s |
+| Alert | Trigger (defaults, all configurable) | Status |
+|---|---|---|
+| `no_adult` | Children visible, no adult in the room for 20 s | ready |
+| `ratio_breach` | More children per adult than the room allows, for 60 s | ready |
+| `phone_use` | A caretaker holding a phone for 10 s | ready |
+| `restricted_zone` | A child inside a marked zone (kitchen, door…) for 3 s | ready |
+| `camera_offline` | No video from a camera for 30 s | ready |
+| `possible_aggression` | Pose-based: a fast adult hand into a child that moves the child, a child shaken back and forth while held, or a child falling right after a fast hand. A Qwen3-VL model then gives a second opinion. | **experimental, off by default** |
+| `child_fall` | A child falls without help and stays down for 10 s (per room; keep off in infant/nap rooms) | **experimental, off by default** |
 
 Every alert gets a snapshot right away, then an H.264 clip that starts just before the condition began.
 Staff mark each alert **Confirm** or **False alarm**, and those reviews give the live precision figure.
 
-Not in v1: **abuse / aggression detection**. It needs labelled footage to train a pose/action model;
-there's no reliable off-the-shelf model for it.
+**About abuse detection:** no model can reliably detect abuse. `possible_aggression` flags moments for a person to review.
+The AI second opinion (likely / unlikely / unclear) is advice only: it never hides or downgrades an alert.
+Turn these alerts on in production only after `vdb eval` shows they meet the target on your own labelled footage.
 
 ## How it fits together
 
 ```
-video sources ──► Worker (one per GPU, all sites batched together)
-                   decode @5fps ─► RF-DETR (person + phone) ─► ByteTrack ─► CLIP adult/child (per track, every 2 s)
-                   ─► phone→person matching, zones ─► RulesEngine (smoothed room counts) ─► alerts / stats / clips
-                                │  NATS JetStream (durable) — or in-process bus locally
-                                ▼
-                   API (FastAPI) ─► Postgres/SQLite ─► dashboard, WebSocket push, daily report, access log
+cameras ──► Worker (one per GPU, every camera/site batched together)
+             decode @5fps ─► RF-DETR person+phone (TensorRT fp16) ─► ByteTrack ─► CLIP adult/child per track
+             ─► RF-DETR pose (only near adult–child interactions) ─► rules + behaviour analysis
+             ─► alerts · room stats · evidence clips · live annotated previews ─► Qwen3-VL second opinion (async)
+                          │  NATS JetStream (durable) — or in-process bus locally
+                          ▼
+             API (FastAPI) ─► Postgres/SQLite ─► dashboard · WebSocket push · reports · access log
 ```
 
-Efficiency choices: newest-frame-only reading (no lag build-up), frames from every camera and site share
-GPU batches, fp16 on GPU, adult/child classification once per track every 2 s instead of every frame,
-and the rules engine runs in the same process (no extra network hop).
+**Latency:** the speed comes from how the models run, not from where the code lives. The vision libraries are pinned to
+the exact versions cloned under `references/`, so every build is identical. The main speed-ups:
+- TensorRT fp16 engines built for the exact GPU (`models.backend: tensorrt`)
+- GPU-side preprocessing
+- one batch across all cameras
+- reading only the newest frame from each camera
+- pose estimation only when an adult is near a child
+- adult/child classification per person every 2 s, not every frame
+- the verifier runs off the real-time path
 
 ## Run locally
 
 ```bash
 python -m venv .venv
 .venv/Scripts/pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
-.venv/Scripts/pip install -e ".[ml,dev]"
-cp configs/local.example.yaml configs/local.yaml    # point `source` at a video file
-.venv/Scripts/vdb --config configs/local.yaml local # prints a temporary admin key; open http://127.0.0.1:8000
+.venv/Scripts/pip install -e ".[ml,gpu,dev]"
 ```
 
-`configs/smoke.yaml` runs two simulated cameras on `data/videos/people-walking.mp4` (supervision's sample clip).
+**Demo:** synthetic data, so no camera or GPU is needed. Every item is labelled [DEMO]:
+```bash
+.venv/Scripts/vdb --config configs/demo.yaml demo      # prints a key; open http://127.0.0.1:8000
+```
+
+**Real pipeline on a video file:**
+```bash
+cp configs/local.example.yaml configs/local.yaml       # point `source` at a video file
+.venv/Scripts/vdb --config configs/local.yaml local
+```
+
+## Dashboard
+
+The dashboard has five screens: Overview (rooms, ratio rings, trends), Live (annotated camera frames), Alerts (filters, a detail
+sheet with clip, AI second opinion and review), Reports (daily compliance, printable) and Activity (who viewed what, live
+precision). It follows light and dark mode, works at phone width, and uses no external scripts.
 
 ## Security and privacy (children's footage)
 
-- **Per-person API keys**: `vdb new-user --name Asha --sites demo` prints a key once; only its SHA-256 goes in
-  the config. Each key only sees its own sites. Reviews are signed with the key owner's name.
-- **Access log**: every snapshot, clip and report view is recorded (`GET /api/access-log`).
-- **Retention**: snapshots and clips are deleted after 30 days, and records after 365 days. Confirmed incidents are kept.
-- **Per-camera switch**: set `enabled: false` where consent is withdrawn; that camera is never read.
-- **Camera credentials**: use `source: env:VAR`, so stream URLs live in `.env`, not in config files.
-- **Hardening**: TLS through Caddy, NATS token auth, `no-store` / `nosniff` / strict CSP headers, public API docs off,
-  and rate limiting on repeated wrong keys.
-- **Still needed before a pilot**: legal review of consent under India's DPDP Act, encrypted EBS volumes, and
-  OIDC staff login.
+- **Staff keys:** every person gets their own key from `vdb new-user`. Each key only sees its own sites, and reviews are signed by the key holder.
+- **Access log:** snapshot, clip, report and live views are all recorded.
+- **Retention:** snapshots and clips are deleted after 30 days and records after 365 days, except confirmed incidents.
+- **Consent:** cameras can be switched off individually (`enabled: false`).
+- **Camera credentials:** stream URLs come from environment variables (`source: env:VAR`), never config files.
+- **Network:**
+  - TLS through Caddy, with the real client IP passed through.
+  - NATS uses token auth.
+  - Strict CSP, `no-store` and `nosniff` headers.
+  - API docs are off.
+  - Repeated wrong keys are rate-limited.
 
 ## Measuring the 90% target
 
-"90%" means **≥ 90% precision and ≥ 90% recall for each alert type**:
-
-1. **Offline:** label incidents in recorded videos, then run
-   ```bash
-   .venv/Scripts/vdb --config configs/eval.yaml eval --labels labels.json --target 0.9 --min-events 20
-   ```
-   The output, per alert type:
-   - TP, FP, duplicate and FN counts.
-   - Precision and recall, each with a 95% lower bound.
-   - False alarms per camera-hour.
-   - Processing speed (× real time).
-
-   An alert type with fewer than `--min-events` labelled incidents **fails**, because a "100%" from 3 events proves
-   nothing (about 35 clean events are needed before the lower bound reaches 90%). The command exits non-zero on
-   failure, so it can gate CI.
-2. **Live:** `GET /api/accuracy?site_id=…` gives precision from staff reviews.
-
-`labels.json` format (times in seconds of video; label each incident from when it starts, e.g. when the last adult left):
-```json
-{"events": [{"room_id": "toddlers", "type": "no_adult", "start": 12.0, "end": 45.0}]}
-```
-
-**Where accuracy stands today:** the pipeline runs end to end on GPU. On a sample clip with only adults, though,
-zero-shot CLIP labelled about 15% of detections as "child", which caused a false restricted-zone alert. Reaching 90% needs
-**labelled daycare footage**, first to fine-tune RF-DETR on adult / child / phone (see Roadmap).
-
-## Cloud deploy (EC2 GPU)
+"90%" means a 95% lower confidence bound of at least 90% for both precision and recall, for each alert type, with at least
+20 labelled events per type:
 
 ```bash
-cd deploy && cp .env.example .env   # set domain + secrets
-cp ../configs/cloud.example.yaml ../configs/cloud.yaml   # add users from `vdb new-user`
-docker compose up -d --build
+.venv/Scripts/vdb --config configs/eval.yaml eval --labels labels.json --target 0.9 --min-events 20
 ```
+
+The output also reports false alarms per camera-hour and processing speed. Staff reviews give live precision at
+`GET /api/accuracy`.
+
+`labels.json` (times in seconds of video): `{"events": [{"room_id": "toddlers", "type": "no_adult", "start": 12, "end": 45}]}`
+
+## Cloud deploy (EC2)
+
+See [deploy/ec2/README.md](deploy/ec2/README.md). In short:
+
+```powershell
+.\deploy\ec2\ec2.ps1 start
+.\deploy\ec2\deploy.ps1 -HostName <public-ip> -KeyPath C:\path\to\key.pem
+.\deploy\ec2\tunnel.ps1 -HostName <public-ip> -KeyPath C:\path\to\key.pem   # dashboard at http://127.0.0.1:8000
+```
+
+Until real CCTV is connected, the worker loops a sample clip. The plan for the CCTV link is in
+[docs/cctv-to-cloud-plan.md](docs/cctv-to-cloud-plan.md).
 
 ## Tests
 
 ```bash
-.venv/Scripts/python -m pytest
+.venv/Scripts/python -m pytest      # 100 tests
 ```
 
 ## Agents
 
-`.claude/agents/` has 26 specialist agents from [agency-agents](https://github.com/msitarzewski/agency-agents)
-(MIT): engineering, security, testing, model QA, privacy, product. Ask for one by name, e.g. "use the Reality
-Checker agent to review this". The full roster of 299 is in `references/00-agents/agency-agents`.
+`.claude/agents/` has 26 specialist agents from [agency-agents](https://github.com/msitarzewski/agency-agents) (MIT):
+Reality Checker, Model QA, the security auditors, Frontend Developer, DevOps Automator and others.
 
 ## Roadmap
 
-1. **Data:** collect consented footage at a pilot centre. Auto-label with GroundingDINO / autodistill, then correct
-   by hand. Fine-tune RF-DETR on adult / child / phone (3–5k frames, 5+ sites) to replace zero-shot CLIP. Add a second
-   phone-detection pass on adult upper-body crops.
-2. **CCTV → cloud link:** see [docs/cctv-to-cloud-plan.md](docs/cctv-to-cloud-plan.md). It covers the edge box,
-   MediaMTX, SRT, bandwidth, fleet operations and the latency budget.
-3. Pose + action model for aggression, verified by a video-language model and always reviewed by a person.
-4. OIDC staff login, S3 clip storage, push notifications, TensorRT.
+1. **Pilot data:** collect consented footage, then auto-label and correct it. Fine-tune RF-DETR on adult/child/phone, which replaces CLIP.
+2. **Calibrate the experimental alerts:** cache per-frame results, sweep the behaviour thresholds offline on staged and normal footage, and choose operating points on a held-out site.
+3. Run pose at the camera's native fps during interactions, to catch fast blows.
+4. **CCTV → cloud:** an edge box per centre with MediaMTX and SRT (see the plan).
+5. OIDC staff login, S3 clip storage, push notifications.

@@ -10,7 +10,7 @@ from vdb.bus import MemoryBus
 from vdb.config import Camera, Clips, Retention, Room, Settings, Site, User
 from vdb.db import init_db
 from vdb.retention import apply_retention
-from vdb.schemas import Alert, AlertType, ClipReady, RoomStat
+from vdb.schemas import Alert, AlertType, AlertUpdate, ClipReady, RoomStat
 
 ADMIN_KEY = "a" * 40
 OTHER_KEY = "b" * 40
@@ -108,6 +108,34 @@ def test_other_site_user_cannot_see_or_review(env):
     assert client.post(f"/api/alerts/{alert.id}/review", json={"status": "confirmed"}, headers=OTHER).status_code == 404
 
 
+def test_open_alert_count_and_review_broadcast(env):
+    client, bus, _ = env
+    alert = make_alert(time.time())
+    publish(client, bus, "vdb.alerts.s1", alert)
+    assert client.get("/api/alerts/count", params={"site_id": "s1"}, headers=ADMIN).json()["count"] == 1
+    with client.websocket_connect("/ws/alerts") as ws:
+        ws.send_json({"key": ADMIN_KEY})
+        time.sleep(0.1)
+        client.post(f"/api/alerts/{alert.id}/review", json={"status": "confirmed", "note": "seen"}, headers=ADMIN)
+        msg = ws.receive_json()
+    assert msg["kind"] == "alert_update" and msg["data"]["status"] == "confirmed" and msg["data"]["reviewed_by"] == "Asha"
+    assert client.get("/api/alerts/count", params={"site_id": "s1"}, headers=ADMIN).json()["count"] == 0
+
+
+def test_thumbnail_audited_once_per_viewer(env):
+    client, bus, settings = env
+    alert = make_alert(time.time())
+    thumb = settings.clips.dir / "s1" / f"{alert.id}.jpg"
+    thumb.parent.mkdir(parents=True, exist_ok=True)
+    thumb.write_bytes(b"jpg")
+    alert.thumbnail = f"s1/{alert.id}.jpg"
+    publish(client, bus, "vdb.alerts.s1", alert)
+    for _ in range(3):
+        assert client.get(f"/api/alerts/{alert.id}/thumbnail", headers=ADMIN).status_code == 200
+    log = client.get("/api/access-log", params={"site_id": "s1"}, headers=ADMIN).json()
+    assert [e["kind"] for e in log] == ["thumbnail"]
+
+
 def test_media_path_traversal_blocked(env):
     client, bus, _ = env
     alert = make_alert(time.time())
@@ -124,7 +152,8 @@ def test_websocket_pushes_only_visible_sites(env):
         publish(client, bus, "vdb.alerts.s1", make_alert(time.time(), site="s1"))
         visible = make_alert(time.time(), site="s2")
         publish(client, bus, "vdb.alerts.s2", visible)
-        assert ws.receive_json()["id"] == visible.id
+        msg = ws.receive_json()
+        assert msg["kind"] == "alert" and msg["data"]["id"] == visible.id
 
 
 def test_daily_report(env):
@@ -155,7 +184,7 @@ async def test_retention_deletes_old_media_but_keeps_confirmed(tmp_path):
             path = settings.clips.dir / "s1" / f"{a.id}.mp4"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"x")
-            s.add(AlertRow(**{**a.model_dump(mode="json"), "clip": f"s1/{a.id}.mp4"}))
+            s.add(AlertRow(**{**a.model_dump(mode="json", exclude={"region"}), "clip": f"s1/{a.id}.mp4"}))
         await s.commit()
         (await s.get(AlertRow, confirmed.id)).status = "confirmed"
         await s.commit()
@@ -165,3 +194,42 @@ async def test_retention_deletes_old_media_but_keeps_confirmed(tmp_path):
     assert result["media_files"] == 1
     assert not (settings.clips.dir / "s1" / f"{old.id}.mp4").exists()
     assert (settings.clips.dir / "s1" / f"{confirmed.id}.mp4").exists()
+
+
+def test_verification_update_stored_and_pushed(env):
+    client, bus, _ = env
+    alert = make_alert(time.time())
+    alert.type, alert.verification = AlertType.POSSIBLE_AGGRESSION, "pending"
+    publish(client, bus, "vdb.alerts.s1", alert)
+    with client.websocket_connect("/ws/alerts") as ws:
+        ws.send_json({"key": ADMIN_KEY})
+        time.sleep(0.1)
+        publish(client, bus, "vdb.alert_updates.s1",
+                AlertUpdate(site_id="s1", alert_id=alert.id, verification="likely", verification_note="grabs arm"))
+        msg = ws.receive_json()
+    assert msg == {"kind": "alert_update", "data": {"site_id": "s1", "alert_id": alert.id,
+                                                     "verification": "likely", "verification_note": "grabs arm"}}
+    row = client.get("/api/alerts", params={"site_id": "s1"}, headers=ADMIN).json()[0]
+    assert (row["verification"], row["verification_note"]) == ("likely", "grabs arm")
+
+
+def test_live_preview_scoped_and_audited(env):
+    client, bus, _ = env
+    client.portal.call(bus.publish_ephemeral, "preview.s1.c1", b"fake-jpeg")
+    assert client.get("/api/cameras/c1/preview.jpg", headers=ADMIN).content == b"fake-jpeg"
+    assert client.get("/api/cameras/c1/preview.jpg", headers=ADMIN).status_code == 200
+    assert client.get("/api/cameras/c1/preview.jpg", headers=OTHER).status_code == 404
+    assert client.get("/api/cameras/c2/preview.jpg", headers=OTHER).status_code == 404  # no frame yet
+    log = client.get("/api/access-log", params={"site_id": "s1"}, headers=ADMIN).json()
+    assert [e["kind"] for e in log] == ["live"]  # two views, one audit entry
+
+
+def test_room_timeline_buckets(env):
+    client, bus, _ = env
+    noon = datetime(2026, 10, 6, 12, tzinfo=ZoneInfo("UTC")).timestamp()
+    for i, kids in enumerate([2, 4, 6]):
+        publish(client, bus, "vdb.stats.s1", RoomStat(site_id="s1", room_id="r1", ts=noon + 60 * i, adults=1,
+                                                       children=kids, cameras_online=1, no_adult=False, ratio_ok=True))
+    tl = client.get("/api/rooms/timeline", params={"site_id": "s1", "day": "2026-10-06"}, headers=ADMIN).json()
+    points = tl["rooms"][0]["points"]
+    assert len(points) == 1 and points[0]["children"] == 4.0 and points[0]["t"] == noon

@@ -1,0 +1,49 @@
+# Synthetic demo: `vdb --config configs/demo.yaml demo` (no cameras or GPU needed).
+demo: true
+sites:
+  - id: sunshine
+    name: Sunshine Daycare
+    timezone: Asia/Kolkata
+    rooms:
+      - id: infants
+        name: Infant Room
+        max_children_per_adult: 3
+      - id: toddlers
+        name: Toddler Room
+        max_children_per_adult: 4
+        fall_detection: true
+      - id: play
+        name: Play Hall
+        max_children_per_adult: 6
+        fall_detection: true
+    cameras:
+      - id: infants-1
+        room: infants
+        source: demo
+      - id: toddlers-1
+        room: toddlers
+        source: demo
+        restricted_zones:
+          - name: kitchen door
+            polygon: [[0.78, 0.5], [1.0, 0.5], [1.0, 1.0], [0.78, 1.0]]
+      - id: play-1
+        room: play
+        source: demo
+      - id: play-2
+        room: play
+        source: demo
+  - id: rainbow
+    name: Rainbow Kids
+    timezone: Asia/Kolkata
+    rooms:
+      - id: main
+        name: Main Room
+    cameras:
+      - id: rainbow-1
+        room: main
+        source: demo
+rules:
+  aggression_enabled: true
+clips:
+  dir: data/demo-clips
+database_url: sqlite+aiosqlite:///data/demo.db

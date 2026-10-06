@@ -31,6 +31,8 @@ class AlertRow(Base):
     reviewed_by: Mapped[str | None] = mapped_column(String(100))
     reviewed_at: Mapped[float | None] = mapped_column(Float)
     note: Mapped[str | None] = mapped_column(String(1000))
+    verification: Mapped[str | None] = mapped_column(String(16))
+    verification_note: Mapped[str | None] = mapped_column(String(500))
 
 
 class RoomStatRow(Base):

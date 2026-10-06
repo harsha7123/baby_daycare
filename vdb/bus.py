@@ -11,6 +11,9 @@ STREAM_MAX_AGE_SECONDS = 24 * 3600
 class Bus(Protocol):
     async def publish(self, subject: str, data: bytes) -> None: ...
     async def subscribe(self, prefix: str, handler: Handler, durable: str | None = None) -> None: ...
+    # Fire-and-forget channel for high-volume data that must not be stored (live previews).
+    async def publish_ephemeral(self, subject: str, data: bytes) -> None: ...
+    async def subscribe_ephemeral(self, prefix: str, handler: Handler) -> None: ...
     async def close(self) -> None: ...
 
 
@@ -30,6 +33,12 @@ class MemoryBus:
 
     async def subscribe(self, prefix: str, handler: Handler, durable: str | None = None) -> None:
         self._subs.append((prefix, handler))
+
+    async def publish_ephemeral(self, subject: str, data: bytes) -> None:
+        await self.publish(subject, data)
+
+    async def subscribe_ephemeral(self, prefix: str, handler: Handler) -> None:
+        await self.subscribe(prefix, handler)
 
     async def close(self) -> None:
         self._subs.clear()
@@ -70,6 +79,18 @@ class NatsBus:
             await msg.ack()
 
         await self._js.subscribe(prefix + ">", durable=durable, cb=on_msg, manual_ack=True)
+
+    async def publish_ephemeral(self, subject: str, data: bytes) -> None:
+        await self._nc.publish(subject, data)
+
+    async def subscribe_ephemeral(self, prefix: str, handler: Handler) -> None:
+        async def on_msg(msg) -> None:
+            try:
+                await handler(msg.subject, msg.data)
+            except Exception:
+                log.exception("handler for %s failed", msg.subject)
+
+        await self._nc.subscribe(prefix + ">", cb=on_msg)
 
     async def close(self) -> None:
         await self._nc.drain()

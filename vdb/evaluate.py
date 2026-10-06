@@ -101,8 +101,9 @@ def format_report(scores: dict[AlertType, TypeScore], target: float, min_events:
         if s.events < min_events:
             verdict, ok = f"FAIL: need >= {min_events} labelled events", False
         else:
-            ok = all(v is not None and v >= target for v in (s.precision, s.recall))
-            verdict = "pass" if ok else "FAIL"
+            # Pass on the 95% lower bound, not the point estimate: 19/20 looks like 95% but proves little.
+            ok = all(v is not None and v >= target for v in (p_low, r_low))
+            verdict = "pass" if ok else "FAIL (95% lower bound below target)"
         passed &= ok
         lines.append(f"{t.value:<17}{s.events:>7}{s.tp:>5}{s.fp:>5}{s.duplicates:>5}{s.fn:>5}"
                      f"{pct(s.precision):>11}{pct(p_low):>11}{pct(s.recall):>9}{pct(r_low):>11}{fa_rate:>10}  {verdict}")

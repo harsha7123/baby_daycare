@@ -1,6 +1,8 @@
 # Cloud stack for one GPU instance (e.g. EC2 g6.xlarge, encrypted EBS, NVIDIA driver + container toolkit).
 # Usage: cp .env.example .env (fill in), cp ../configs/cloud.example.yaml ../configs/cloud.yaml, add users with
-# `vdb new-user`, then: docker compose up -d --build
+# `vdb new-user`, then: docker compose up -d --build   (deploy/ec2/ automates all of this over SSH)
+# Default: the API listens on the host's 127.0.0.1:8000 only; reach it through an SSH tunnel (deploy/ec2/tunnel.*).
+# Public HTTPS: set VDB_DOMAIN in .env, open 80/443, then: docker compose --profile tls up -d
 name: vdb
 
 x-hardening: &hardening
@@ -12,8 +14,20 @@ services:
   caddy:
     image: caddy:2.8-alpine
     # Automatic HTTPS (Let's Encrypt) for VDB_DOMAIN; the only service reachable from outside.
-    command: ["caddy", "reverse-proxy", "--from", "${VDB_DOMAIN:?set in .env}", "--to", "api:8000"]
+    # Opt-in (`--profile tls`), so a dev box without a domain runs without it. VDB_DOMAIN is checked here at
+    # start-up rather than with `:?`, because compose interpolates every service even when its profile is off.
+    profiles: ["tls"]
+    environment:
+      VDB_DOMAIN: ${VDB_DOMAIN:-}
+    command:
+      - sh
+      - -c
+      - 'test -n "$$VDB_DOMAIN" || { echo "set VDB_DOMAIN in deploy/.env for the tls profile" >&2; exit 1; }; exec caddy reverse-proxy --from "$$VDB_DOMAIN" --to api:8000'
     ports: ["80:80", "443:443"]
+    # Fixed address: the API trusts X-Forwarded-For only from this IP (VDB_TRUSTED_PROXIES on the api service).
+    networks:
+      default:
+        ipv4_address: 172.28.0.10
     volumes: [caddydata:/data]
     cap_add: [NET_BIND_SERVICE]
     security_opt: ["no-new-privileges:true"]
@@ -39,9 +53,14 @@ services:
     <<: *hardening
     build: { context: .., dockerfile: deploy/Dockerfile }
     command: ["api", "--host", "0.0.0.0", "--port", "8000"]
+    # Host loopback only: never exposed to the internet; use the SSH tunnel (or caddy with --profile tls).
+    ports: ["127.0.0.1:8000:8000"]
     environment:
       VDB_BUS_URL: nats://${NATS_TOKEN}@nats:4222
       VDB_DATABASE_URL: postgresql+asyncpg://vdb:${POSTGRES_PASSWORD}@db/vdb
+      # Only caddy's fixed address may set the client IP via X-Forwarded-For. Requests through the SSH tunnel
+      # arrive from the docker gateway (172.28.0.1), which is not trusted, so their headers are ignored.
+      VDB_TRUSTED_PROXIES: 172.28.0.10
     volumes:
       - ../configs:/app/configs:ro
       - appdata:/app/data
@@ -53,6 +72,8 @@ services:
     command: ["worker"]
     environment:
       VDB_BUS_URL: nats://${NATS_TOKEN}@nats:4222
+      # Optional: a Hugging Face token speeds up (and un-throttles) model downloads.
+      HF_TOKEN: ${HF_TOKEN:-}
       # Camera URLs referenced as `source: env:VAR` in the config go here, e.g.:
       # CAM_DEMO_1_URL: ${CAM_DEMO_1_URL}
     volumes:
@@ -63,6 +84,15 @@ services:
       resources:
         reservations:
           devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+
+networks:
+  default:
+    # Fixed subnet so caddy's address (172.28.0.10) is stable. Pick another /24 if it clashes with an existing
+    # docker network on the host (e.g. one created for Isaac Sim). Changing the subnet of an existing
+    # vdb_default network needs: docker compose down && docker compose up -d
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
 
 volumes:
   caddydata:

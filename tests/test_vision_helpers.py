@@ -85,3 +85,20 @@ def test_letterbox_keeps_whole_person():
     out = letterbox(img)
     assert out.shape == (300, 300, 3)
     assert out[:, 100:200].min() == 1
+
+
+class TestPoseMatching:
+    def test_poses_matched_to_overlapping_tracks(self):
+        from vdb.vision import match_poses
+
+        tracks = np.array([[0, 0, 10, 20], [50, 0, 60, 20]], dtype=float)
+        poses = np.array([[51, 1, 61, 21], [100, 0, 110, 20], [1, 0, 11, 19]], dtype=float)
+        assert match_poses(tracks, poses) == {0: 2, 1: 0}
+
+    def test_near_child_uses_adult_height(self):
+        from vdb.vision import near_child
+
+        adult_box = np.array([0, 0, 10, 100], dtype=float)
+        assert near_child(adult_box, np.array([[40, 50, 50, 100]], dtype=float), distance=0.5)
+        assert not near_child(adult_box, np.array([[80, 50, 90, 100]], dtype=float), distance=0.5)
+        assert not near_child(adult_box, np.empty((0, 4)), distance=0.5)

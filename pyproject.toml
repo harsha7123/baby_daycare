@@ -1,15 +1,18 @@
 [project]
 name = "vdb"
-version = "0.1.0"
+version = "0.2.0"
 description = "Vision AI safety monitoring for daycare centres"
 requires-python = ">=3.11"
+# Vision libraries are pinned to the exact versions tested (and cloned under references/) so every
+# deployment runs identical model code.
 dependencies = [
     "numpy",
-    "opencv-python-headless",
+    "opencv-python-headless>=4.10",
+    "pillow",
     "pydantic>=2",
     "pyyaml",
-    "supervision",
-    "trackers",
+    "supervision==0.30.7",
+    "trackers==2.6.1",
     "fastapi[standard]",
     "sqlalchemy[asyncio]>=2",
     "aiosqlite",
@@ -21,8 +24,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Torch is installed separately so the right CUDA build is chosen (see README).
-ml = ["rfdetr", "transformers"]
+# Torch is installed separately so the right CUDA build is chosen (see README / deploy/Dockerfile).
+ml = ["rfdetr[onnx]==1.11.2", "transformers==5.18.0"]
+# TensorRT backend for NVIDIA GPUs (engine is built on the target GPU at first start).
+gpu = ["tensorrt-cu12", "onnxconverter-common", "polygraphy"]
 dev = ["pytest", "pytest-asyncio", "httpx"]
 
 [project.scripts]
@@ -34,6 +39,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["vdb*"]
+
+[tool.setuptools.package-data]
+vdb = ["static/**/*", "templates/*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

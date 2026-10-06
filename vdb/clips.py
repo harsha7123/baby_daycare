@@ -58,6 +58,10 @@ class ClipRecorder:
         if alert.camera_id in self._buf:
             self._pending.append((alert, alert.triggered_at + self.cfg.post_seconds))
 
+    def jpegs(self, camera_id: str, start: float, end: float) -> list[bytes]:
+        """Buffered JPEG frames for a camera between two timestamps (decoded later, off the real-time thread)."""
+        return [f for t, f in self._buf.get(camera_id, ()) if start <= t <= end]
+
     def close(self) -> None:
         self._pool.shutdown(wait=True)
 
