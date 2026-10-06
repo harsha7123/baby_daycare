@@ -1,0 +1,31 @@
+# Smoke test: two simulated cameras on the same sample clip, to exercise cross-camera batching.
+sites:
+  - id: demo
+    name: Demo Daycare
+    timezone: Asia/Kolkata
+    rooms:
+      - id: hall
+        name: Hall
+        max_children_per_adult: 4
+    cameras:
+      - id: cam-1
+        room: hall
+        source: data/videos/people-walking.mp4
+        fps: 5
+      - id: cam-2
+        room: hall
+        source: data/videos/people-walking.mp4
+        fps: 5
+        restricted_zones:
+          - name: right side
+            polygon: [[0.7, 0.0], [1.0, 0.0], [1.0, 1.0], [0.7, 1.0]]
+rules:
+  no_adult_seconds: 3
+  phone_seconds: 2
+  restricted_zone_seconds: 1
+models:
+  detector: small
+  batch_size: 8
+clips:
+  dir: data/clips
+database_url: sqlite+aiosqlite:///data/vdb.db

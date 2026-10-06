@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+references/
+data/
+models/
+*.db
+*.mp4
+!tests/fixtures/*.mp4
+.env
+# Real configs hold user key hashes and camera settings; only examples are committed.
+configs/*.yaml
+!configs/*.example.yaml
+!configs/smoke.yaml
+*.egg-info/

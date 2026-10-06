@@ -1,0 +1,47 @@
+# Copy to configs/local.yaml and point `source` at a video file to simulate a camera.
+# Real cameras use rtsp:// or srt:// URLs (wired up in the CCTV phase).
+# Staff keys: run `vdb new-user --name NAME --sites SITE` and paste its output here.
+# (Local runs without users print a temporary admin key.)
+users: []
+
+sites:
+  - id: demo
+    name: Demo Daycare
+    timezone: Asia/Kolkata
+    rooms:
+      - id: toddlers
+        name: Toddler Room
+        max_children_per_adult: 4
+    cameras:
+      - id: cam-1
+        room: toddlers
+        source: data/videos/sample.mp4
+        fps: 5
+        restricted_zones:
+          - name: kitchen door
+            polygon: [[0.80, 0.55], [1.0, 0.55], [1.0, 1.0], [0.80, 1.0]]
+
+rules:
+  no_adult_seconds: 20
+  ratio_seconds: 60
+  phone_seconds: 10
+  restricted_zone_seconds: 3
+  camera_offline_seconds: 30
+  gap_tolerance_seconds: 3
+  cooldown_seconds: 120
+  stats_interval_seconds: 10
+
+models:
+  detector: small        # nano | small | medium | large (all Apache-2.0)
+  device: auto           # auto | cuda | cpu
+  person_threshold: 0.4
+  phone_threshold: 0.3
+  batch_size: 8
+
+clips:
+  dir: data/clips
+  pre_seconds: 30
+  post_seconds: 5
+
+bus_url: null            # e.g. nats://localhost:4222 for separate worker/api processes
+database_url: sqlite+aiosqlite:///data/vdb.db

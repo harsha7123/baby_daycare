@@ -1,0 +1,71 @@
+# Cloud stack for one GPU instance (e.g. EC2 g6.xlarge, encrypted EBS, NVIDIA driver + container toolkit).
+# Usage: cp .env.example .env (fill in), cp ../configs/cloud.example.yaml ../configs/cloud.yaml, add users with
+# `vdb new-user`, then: docker compose up -d --build
+name: vdb
+
+x-hardening: &hardening
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  restart: unless-stopped
+
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    # Automatic HTTPS (Let's Encrypt) for VDB_DOMAIN; the only service reachable from outside.
+    command: ["caddy", "reverse-proxy", "--from", "${VDB_DOMAIN:?set in .env}", "--to", "api:8000"]
+    ports: ["80:80", "443:443"]
+    volumes: [caddydata:/data]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    depends_on: [api]
+
+  nats:
+    <<: *hardening
+    image: nats:2.10-alpine
+    command: ["-js", "-sd", "/data", "--auth", "${NATS_TOKEN:?set in .env}"]
+    volumes: [natsdata:/data]
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: vdb
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: vdb
+    volumes: [dbdata:/var/lib/postgresql/data]
+    restart: unless-stopped
+
+  api:
+    <<: *hardening
+    build: { context: .., dockerfile: deploy/Dockerfile }
+    command: ["api", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      VDB_BUS_URL: nats://${NATS_TOKEN}@nats:4222
+      VDB_DATABASE_URL: postgresql+asyncpg://vdb:${POSTGRES_PASSWORD}@db/vdb
+    volumes:
+      - ../configs:/app/configs:ro
+      - appdata:/app/data
+    depends_on: [nats, db]
+
+  worker:
+    <<: *hardening
+    build: { context: .., dockerfile: deploy/Dockerfile }
+    command: ["worker"]
+    environment:
+      VDB_BUS_URL: nats://${NATS_TOKEN}@nats:4222
+      # Camera URLs referenced as `source: env:VAR` in the config go here, e.g.:
+      # CAM_DEMO_1_URL: ${CAM_DEMO_1_URL}
+    volumes:
+      - ../configs:/app/configs:ro
+      - appdata:/app/data
+    depends_on: [nats, api]
+    deploy:
+      resources:
+        reservations:
+          devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+
+volumes:
+  caddydata:
+  natsdata:
+  dbdata:
+  appdata:

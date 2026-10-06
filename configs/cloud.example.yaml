@@ -1,0 +1,26 @@
+# Copy to configs/cloud.yaml on the EC2 host. bus_url and database_url come from env (see deploy/docker-compose.yml).
+# Staff keys: run `vdb new-user --name NAME --sites SITE` and paste its output here.
+# (Local runs without users print a temporary admin key.)
+users: []
+
+sites:
+  - id: demo
+    name: Demo Daycare
+    timezone: Asia/Kolkata
+    rooms:
+      - id: toddlers
+        name: Toddler Room
+        max_children_per_adult: 4
+    cameras:
+      - id: cam-1
+        room: toddlers
+        source: data/videos/sample.mp4   # later: env:CAM_DEMO_1_URL (URL with credentials kept in .env)
+        fps: 5
+
+models:
+  detector: small
+  device: cuda
+  batch_size: 16
+
+clips:
+  dir: /app/data/clips

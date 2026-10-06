@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daily report – {{ r.site.name }} – {{ r.date }}</title>
+<style>
+  :root { --fg:#1d2433; --muted:#5b6475; --line:#e3e6ec; --bg:#fff; --high:#b42318; --medium:#b54708; --ok:#067647; }
+  body { font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg); background: var(--bg); margin: 0 auto; max-width: 960px; padding: 24px 16px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 28px 0 8px; }
+  .muted { color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .sev-high { color: var(--high); font-weight: 600; }
+  .sev-medium { color: var(--medium); font-weight: 600; }
+  .good { color: var(--ok); }
+  .bad { color: var(--high); }
+  .wrap { overflow-x: auto; }
+  @media print { body { padding: 0; } }
+</style>
+</head>
+<body>
+<h1>{{ r.site.name }} — daily safety report</h1>
+<div class="muted">{{ r.date }} · times in {{ r.site.timezone }}</div>
+
+<h2>Rooms</h2>
+<div class="wrap"><table>
+  <tr><th>Room</th><th class="num">Monitored (min)</th><th class="num">Occupied (min)</th><th class="num">No adult (min)</th><th class="num">Ratio compliance</th><th class="num">Peak children</th><th>Alerts</th></tr>
+  {% for room in r.rooms %}
+  <tr>
+    <td>{{ room.name }}</td>
+    <td class="num">{{ room.monitored_minutes }}</td>
+    <td class="num">{{ room.occupied_minutes }}</td>
+    <td class="num {{ 'bad' if room.no_adult_minutes > 0 else 'good' }}">{{ room.no_adult_minutes }}</td>
+    <td class="num">{% if room.ratio_compliance_pct is none %}—{% else %}<span class="{{ 'good' if room.ratio_compliance_pct >= 99 else 'bad' }}">{{ room.ratio_compliance_pct }}%</span>{% endif %}</td>
+    <td class="num">{{ room.peak_children }}</td>
+    <td>{% for t, n in room.alerts.items() %}{{ t.replace('_', ' ') }}: {{ n }}{% if not loop.last %}, {% endif %}{% else %}<span class="muted">none</span>{% endfor %}</td>
+  </tr>
+  {% endfor %}
+</table></div>
+
+<h2>Alert review</h2>
+{% if r.review %}
+<div class="wrap"><table>
+  <tr><th>Type</th><th class="num">Confirmed</th><th class="num">False alarm</th><th class="num">Not reviewed</th><th class="num">Precision</th></tr>
+  {% for t, v in r.review.items() %}
+  <tr><td>{{ t.replace('_', ' ') }}</td><td class="num">{{ v.confirmed }}</td><td class="num">{{ v.false_alarm }}</td><td class="num">{{ v.open }}</td>
+      <td class="num">{% if v.precision is none %}—{% else %}{{ (v.precision * 100) | round(1) }}%{% endif %}</td></tr>
+  {% endfor %}
+</table></div>
+{% else %}<p class="muted">No alerts today.</p>{% endif %}
+
+<h2>All alerts</h2>
+{% if r.alerts %}
+<div class="wrap"><table>
+  <tr><th>Time</th><th>Room</th><th>Type</th><th>Details</th><th>Review</th></tr>
+  {% for a in r.alerts %}
+  <tr><td>{{ a.time }}</td><td>{{ a.room }}</td><td class="sev-{{ a.severity }}">{{ a.type.replace('_', ' ') }}</td><td>{{ a.message }}</td><td>{{ a.status.replace('_', ' ') }}</td></tr>
+  {% endfor %}
+</table></div>
+{% else %}<p class="muted">No alerts today.</p>{% endif %}
+</body>
+</html>
